@@ -1,0 +1,144 @@
+# ============================================================================
+# QUASAR - QUantitative Automated Stock ARbiter
+# Configuration file. All tunables live here.
+# ============================================================================
+
+broker:
+  # Which broker to use for live/paper trading. Options: paper | dhan | groww
+  mode: paper
+  dhan:
+    client_id: ""        # fill from Dhan developer console
+    client_secret: ""
+    access_token: ""     # optional, else use api_key+secret
+  groww:
+    api_key: ""
+    api_secret: ""
+
+universe:
+  # Liquid large-cap universe (Nifty 50). Symbols use .NS (NSE) suffix.
+  source: static
+  symbols:
+    - RELIANCE.NS
+    - TCS.NS
+    - HDFCBANK.NS
+    - INFY.NS
+    - HINDUNILVR.NS
+    - ICICIBANK.NS
+    - ITC.NS
+    - KOTAKBANK.NS
+    - BHARTIARTL.NS
+    - LT.NS
+    - AXISBANK.NS
+    - ASIANPAINT.NS
+    - MARUTI.NS
+    - SUNPHARMA.NS
+    - TITAN.NS
+    - NTPC.NS
+    - POWERGRID.NS
+    - ONGC.NS
+    - HCLTECH.NS
+    - BAJFINANCE.NS
+    - BAJAJFINSV.NS
+    - TATAMOTORS.NS
+    - WIPRO.NS
+    - ULTRACEMCO.NS
+    - ADANIPORTS.NS
+    - COALINDIA.NS
+    - DRREDDY.NS
+    - EICHERMOT.NS
+    - GRASIM.NS
+    - SBIN.NS
+    - INDUSINDBK.NS
+    - CIPLA.NS
+    - TECHM.NS
+    - NESTLEIND.NS
+    - TATASTEEL.NS
+    - BAJAJ-AUTO.NS
+    - HEROMOTOCO.NS
+    - HDFCLIFE.NS
+    - SBILIFE.NS
+    - BRITANNIA.NS
+    - DIVISLAB.NS
+    - APOLLOHOSP.NS
+    - M&M.NS
+    - JSWSTEEL.NS
+    - TATACONSUM.NS
+    - UPL.NS
+    - SHREECEM.NS
+    - ADANIENT.NS
+
+strategy:
+  # Active strategy. Options: index_trend | ensemble | overnight | momentum | mean_reversion
+  active: index_trend
+
+  index_trend:
+    trade_symbol: NIFTYBEES.NS   # ETF used as the execution vehicle
+    regime_index: ^NSEI         # Nifty index used for the trend/vol signal
+    mode: above_ma              # above_ma | cross
+    ma_window: 50
+    fast: 20
+    slow: 50
+    vol_target: 0.15            # target annualised vol (leverage scales to this)
+    max_leverage: 1.5
+    vol_window: 20
+
+  # --- alternative strategies (selectable via strategy.active) ---
+  ensemble:
+    momentum: 0.65
+    mean_reversion: 0.35
+
+  momentum:
+    lookback_days: 126
+    skip_days: 21
+    top_n: 10
+    min_dollar_vol: 5e6
+    rebalance: ME
+    regime_index: ^NSEI
+    regime_ma: 200
+
+  mean_reversion:
+    rsi_period: 14
+    rsi_oversold: 32
+    rsi_overbought: 62
+    bb_period: 20
+    bb_std: 2.0
+    hold_days: 10
+    regime_index: ^NSEI
+    regime_ma: 200
+
+  overnight:
+    trade_symbol: NIFTYBEES.NS
+    regime_index: ^NSEI
+    regime_ma: 200
+    mode: index
+    top_n: 10
+    rebalance: W
+
+  regime_filter:
+    enabled: true
+    index: ^NSEI
+    ma_window: 50
+
+risk:
+  max_positions: 12
+  max_weight_per_position: 1.5   # allows full + leveraged single-asset exposure (index_trend)
+  stop_loss_pct: 0.08          # hard stop per position
+  target_drawdown_pct: 0.15    # circuit breaker: halt new entries above this DD
+  volatility_target: 0.12      # annualized vol target for risk-parity sizing
+  cash_buffer: 0.05            # keep 5% cash
+
+costs:
+  commission_pct: 0.0005       # 0.05% per side (discount broker)
+  stt_pct: 0.00025             # securities transaction tax (equity delivery)
+  slippage_pct: 0.0005         # assumed execution slippage per side
+  impact_pct: 0.0005           # market impact for larger orders
+
+backtest:
+  start: "2016-01-01"
+  end: "2024-12-31"
+  benchmark: NIFTYBEES.NS
+  initial_capital: 1000000.0   # INR 10 lakh
+
+logging:
+  level: INFO
+  dir: logs
