@@ -7,7 +7,7 @@ from .base import Strategy, MomentumStrategy, MeanReversionStrategy
 from .ensemble import EnsembleStrategy
 from .trend import IndexTrendStrategy
 from .overnight import OvernightStrategy
-from .futures import FuturesTrendStrategy
+from .futures import FuturesTrendStrategy, MultiTrendStrategy
 
 
 def build_strategy(cfg: Config) -> Strategy:
@@ -53,26 +53,43 @@ def build_strategy(cfg: Config) -> Strategy:
             ma_window=p.get("ma_window", 50),
             fast=p.get("fast", 20),
             slow=p.get("slow", 50),
-            vol_target=p.get("vol_target", 0.20),
+            vol_target=p.get("vol_target", 0.18),
             max_leverage=p.get("max_leverage", 3.0),
             vol_window=p.get("vol_window", 20),
             long_only=p.get("long_only", False),
+        )
+    if active == "multi_trend":
+        p = cfg.get("strategy.multi_trend", {})
+        insts = p.get("instruments") or required_symbols(cfg)
+        return MultiTrendStrategy(
+            instruments=insts,
+            mode=p.get("mode", "above_ma"),
+            ma_window=p.get("ma_window", 50),
+            fast=p.get("fast", 20),
+            slow=p.get("slow", 50),
+            instr_vol=p.get("instr_vol", 0.10),
+            portfolio_vol=p.get("portfolio_vol", 0.18),
+            max_leverage=p.get("max_leverage", 3.0),
+            gross_cap=p.get("gross_cap", 5.0),
+            vol_window=p.get("vol_window", 20),
+            long_only=p.get("long_only", True),
         )
     raise ValueError(f"Unknown strategy: {active}")
 
 
 def required_symbols(cfg: Config) -> List[str]:
-    """Symbols needed for the active strategy (regime index + universe)."""
+    """Symbols needed for the active strategy (indices + universe)."""
     syms = list(cfg.get("universe.symbols", []))
+    syms = list(dict.fromkeys(syms + list(cfg.get("universe.indices", []))))
     rf = cfg.get("strategy.regime_filter.index", "^NSEI")
     if rf not in syms:
         syms = [rf] + syms
     # include the active strategy's own traded/index symbol
     try:
         strat = build_strategy(cfg)
-        for attr in ("trade_symbol", "index"):
+        for attr in ("trade_symbol", "index", "instruments"):
             val = getattr(strat, attr, None)
-            if val and val not in syms:
+            if isinstance(val, str) and val not in syms:
                 syms = [val] + syms
     except Exception:
         pass

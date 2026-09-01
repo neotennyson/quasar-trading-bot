@@ -46,8 +46,8 @@ def main():
     fut_index = getattr(strat, "index", None)
     universe = list(cfg.get("universe.symbols", []))
 
-    is_futures = (active == "futures_trend")
-    bench_sym = fut_index if is_futures else cfg.get("backtest.benchmark", "^NSEI")
+    is_futures = (active in ("futures_trend", "multi_trend"))
+    bench_sym = "^NSEI" if is_futures else cfg.get("backtest.benchmark", "^NSEI")
 
     needed = list(dict.fromkeys([regime_index, bench_sym] + ([trade_symbol] if trade_symbol else [])
                                  + ([fut_index] if fut_index else []) + universe))

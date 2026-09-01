@@ -82,3 +82,23 @@ def test_futures_strategy_signed_and_profitable(market):
                   account_dd=0.25, stop_pct=0.06)
     assert res.metrics["final_equity"] > 1_000_000.0
     assert res.metrics["sharpe"] > 0.5
+
+
+def test_multi_trend_diversified(market):
+    from quasar.strategies.futures import MultiTrendStrategy
+    from quasar.backtest.engine import BacktestEngine
+    close, vol = market
+    insts = [c for c in close.columns if c.startswith(("^NSE", "RELIANCE", "TCS", "INFY", "ICICIBANK"))]
+    if len(insts) < 2:
+        insts = list(close.columns[:8])
+    strat = MultiTrendStrategy(instruments=insts, portfolio_vol=0.15, gross_cap=3.0, long_only=True)
+    w = strat.run(close, vol)
+    assert w.shape[1] == len(insts)
+    # gross leverage should be capped near gross_cap, not explosive
+    assert w.abs().sum(axis=1).max() <= 3.0 + 1e-6
+    eng = BacktestEngine(initial_capital=1_000_000.0)
+    eng.cost_pct = 0.0002
+    res = eng.run(w, close, benchmark=close["^NSEI"] if "^NSEI" in close.columns else close[close.columns[0]],
+                  futures=True, max_leverage=2.0, account_dd=0.25, stop_pct=0.06)
+    assert res.metrics["final_equity"] > 1_000_000.0
+    assert res.metrics["max_drawdown"] > -0.6  # must not blow up
