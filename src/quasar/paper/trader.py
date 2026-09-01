@@ -163,7 +163,7 @@ def main():
         print("STEP result:", {k: (round(v, 2) if isinstance(v, float) else v)
                                for k, v in res.items() if k != "target"})
         if res.get("target") is not None:
-            print("Target weights:", {k: round(v, 3) for k, v in res["target"].items() if v > 0})
+            print("Signal (signed leverage):", {k: round(v, 3) for k, v in res["target"].items()})
     else:
         run_forever(args.poll)
 

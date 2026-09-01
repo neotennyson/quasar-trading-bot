@@ -39,10 +39,15 @@ class BacktestEngine:
 
     def run(self, raw_weights: pd.DataFrame, close: pd.DataFrame,
             risk_mgr=None, benchmark: pd.Series | None = None,
-            open_px: pd.DataFrame | None = None, overnight: bool = False) -> BacktestResult:
+            open_px: pd.DataFrame | None = None, overnight: bool = False,
+            futures: bool = False, max_leverage: float = 3.0,
+            account_dd: float = 0.25, stop_pct: float = 0.06) -> BacktestResult:
         symbols = list(raw_weights.columns)
         # risk manager may adjust target weights
-        if risk_mgr is not None:
+        if futures:
+            # signed leverage, bounded; shorts allowed
+            w = raw_weights.clip(-max_leverage, max_leverage)
+        elif risk_mgr is not None:
             w = risk_mgr.apply(raw_weights)
         else:
             w = raw_weights.clip(upper=1.0)
@@ -52,6 +57,9 @@ class BacktestEngine:
         w_prev = pd.Series(0.0, index=symbols)
         entry: Dict[str, float] = {}
         trades = []
+        halted = False
+        floor = self.capital0 * (1 - account_dd)
+        recover = self.capital0 * (1 - account_dd * 0.5)
 
         if overnight:
             if open_px is None:
@@ -83,21 +91,40 @@ class BacktestEngine:
                 eq = equity.iloc[t - 1] * (1 + port_ret)
 
                 w_target = w.iloc[t].copy()
-                # stop-loss: exit positions that breached stop during the day
-                for s in symbols:
-                    if w_prev[s] > 0 and s in entry:
-                        if close[s].iloc[t] <= entry[s] * (1 - self.stop_loss_pct):
-                            if w_target[s] > 0:
+
+                if futures:
+                    # per-position stop (handles shorts), and account DD breaker
+                    for s in symbols:
+                        if w_prev[s] != 0 and s in entry:
+                            adverse = (close[s].iloc[t] / entry[s] - 1.0)
+                            if (w_prev[s] > 0 and adverse < -stop_pct) or \
+                               (w_prev[s] < 0 and adverse > stop_pct):
+                                w_target[s] = 0.0
                                 trades.append((close.index[t], s, "STOP_EXIT",
                                                w_prev[s], close[s].iloc[t]))
-                            w_target[s] = 0.0
+                    if halted:
+                        w_target = pd.Series(0.0, index=symbols)
+                        if eq >= recover:
+                            halted = False
+                    elif eq < floor:
+                        halted = True
+                        w_target = pd.Series(0.0, index=symbols)
+                else:
+                    # stop-loss: exit positions that breached stop during the day
+                    for s in symbols:
+                        if w_prev[s] > 0 and s in entry:
+                            if close[s].iloc[t] <= entry[s] * (1 - self.stop_loss_pct):
+                                if w_target[s] > 0:
+                                    trades.append((close.index[t], s, "STOP_EXIT",
+                                                   w_prev[s], close[s].iloc[t]))
+                                w_target[s] = 0.0
 
                 turnover = float((w_target - w_prev).abs().sum() / 2.0)
                 cost = eq * turnover * self.cost_pct
                 eq -= cost
 
                 for s in symbols:
-                    if w_target[s] > 0 and w_prev[s] == 0:
+                    if w_target[s] != 0 and w_prev[s] == 0:
                         entry[s] = float(close[s].iloc[t])
                         trades.append((close.index[t], s, "ENTRY",
                                        w_target[s], close[s].iloc[t]))
@@ -112,7 +139,7 @@ class BacktestEngine:
 
         bench = None
         if benchmark is not None:
-            b = benchmark.reindex(close.index).ffill()
+            b = benchmark.reindex(close.index).ffill().bfill()
             bench = (b / b.iloc[0]) * self.capital0
 
         metrics = self._metrics(equity, bench)

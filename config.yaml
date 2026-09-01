@@ -68,8 +68,8 @@ universe:
     - ADANIENT.NS
 
 strategy:
-  # Active strategy. Options: index_trend | ensemble | overnight | momentum | mean_reversion
-  active: index_trend
+  # Active strategy. Options: futures_trend | index_trend | ensemble | overnight | momentum | mean_reversion
+  active: futures_trend
 
   index_trend:
     trade_symbol: NIFTYBEES.NS   # ETF used as the execution vehicle
@@ -114,10 +114,27 @@ strategy:
     top_n: 10
     rebalance: W
 
+  futures_trend:
+    index: ^NSEI           # trade this index's FUTURES (Nifty). Use ^NSEBANK for Bank Nifty
+    mode: above_ma         # above_ma | cross
+    ma_window: 50
+    fast: 20
+    slow: 50
+    vol_target: 0.18       # target annualised vol -> leverage applied to futures
+    max_leverage: 3.0      # hard cap on futures leverage
+    vol_window: 20
+    long_only: true        # true = long when trend up, flat when down (no shorting)
+
   regime_filter:
     enabled: true
     index: ^NSEI
     ma_window: 50
+
+# F&O-specific cost & risk assumptions (futures: low STT + exchange charges)
+costs_futures:
+  cost_pct: 0.0002         # ~0.02% round-trip (STT 0.01% + exchange + brokerage)
+  stop_pct: 0.06           # exit a trade if index moves 6% against entry
+  account_dd: 0.25         # flatten & halt new entries if account drawdown hits 25%
 
 risk:
   max_positions: 12

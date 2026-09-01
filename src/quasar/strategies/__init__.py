@@ -7,6 +7,7 @@ from .base import Strategy, MomentumStrategy, MeanReversionStrategy
 from .ensemble import EnsembleStrategy
 from .trend import IndexTrendStrategy
 from .overnight import OvernightStrategy
+from .futures import FuturesTrendStrategy
 
 
 def build_strategy(cfg: Config) -> Strategy:
@@ -44,13 +45,35 @@ def build_strategy(cfg: Config) -> Strategy:
                                  regime_index=p.get("regime_index", "^NSEI"),
                                  regime_ma=p.get("regime_ma", 200), mode=p.get("mode", "index"),
                                  top_n=p.get("top_n", 10), rebalance=p.get("rebalance", "W"))
+    if active == "futures_trend":
+        p = cfg.get("strategy.futures_trend", {})
+        return FuturesTrendStrategy(
+            index=p.get("index", "^NSEI"),
+            mode=p.get("mode", "above_ma"),
+            ma_window=p.get("ma_window", 50),
+            fast=p.get("fast", 20),
+            slow=p.get("slow", 50),
+            vol_target=p.get("vol_target", 0.20),
+            max_leverage=p.get("max_leverage", 3.0),
+            vol_window=p.get("vol_window", 20),
+            long_only=p.get("long_only", False),
+        )
     raise ValueError(f"Unknown strategy: {active}")
 
 
 def required_symbols(cfg: Config) -> List[str]:
-    """Symbols needed for the active strategy (regime index + trade vehicle + universe)."""
+    """Symbols needed for the active strategy (regime index + universe)."""
     syms = list(cfg.get("universe.symbols", []))
     rf = cfg.get("strategy.regime_filter.index", "^NSEI")
     if rf not in syms:
         syms = [rf] + syms
+    # include the active strategy's own traded/index symbol
+    try:
+        strat = build_strategy(cfg)
+        for attr in ("trade_symbol", "index"):
+            val = getattr(strat, attr, None)
+            if val and val not in syms:
+                syms = [val] + syms
+    except Exception:
+        pass
     return syms

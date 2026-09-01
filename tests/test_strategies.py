@@ -61,3 +61,24 @@ def test_risk_manager_caps_positions(market):
                        stop_loss_pct=0.0, target_drawdown_pct=0.5)
     out = risk.apply(w)
     assert (out <= 0.15 + 1e-9).all().all()
+
+
+def test_futures_strategy_signed_and_profitable(market):
+    from quasar.strategies.futures import FuturesTrendStrategy
+    from quasar.backtest.engine import BacktestEngine
+    close, vol = market
+    # restrict to index columns present in the fixture
+    idx = "^NSEI" if "^NSEI" in close.columns else close.columns[0]
+    sub = close[[idx]]
+    strat = FuturesTrendStrategy(index=idx, vol_target=0.18, max_leverage=3.0, long_only=True)
+    w = strat.run(sub, pd.DataFrame(index=sub.index, columns=sub.columns, data=0.0))
+    # signed, bounded by leverage
+    assert (w <= 3.0 + 1e-9).all().all()
+    assert (w >= -3.0 - 1e-9).all().all()
+    assert (w > 0).any().any()  # takes long positions sometimes
+    eng = BacktestEngine(initial_capital=1_000_000.0)
+    eng.cost_pct = 0.0002
+    res = eng.run(w, sub, benchmark=sub[idx], futures=True, max_leverage=3.0,
+                  account_dd=0.25, stop_pct=0.06)
+    assert res.metrics["final_equity"] > 1_000_000.0
+    assert res.metrics["sharpe"] > 0.5

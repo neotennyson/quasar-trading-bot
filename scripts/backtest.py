@@ -42,11 +42,15 @@ def main():
     strat = build_strategy(cfg)
     active = cfg.get("strategy.active", "index_trend")
     regime_index = cfg.get("strategy.regime_filter.index", "^NSEI")
-    bench_sym = cfg.get("backtest.benchmark", "^NSEI")
     trade_symbol = getattr(strat, "trade_symbol", None)
+    fut_index = getattr(strat, "index", None)
     universe = list(cfg.get("universe.symbols", []))
 
-    needed = list(dict.fromkeys([regime_index, bench_sym] + ([trade_symbol] if trade_symbol else []) + universe))
+    is_futures = (active == "futures_trend")
+    bench_sym = fut_index if is_futures else cfg.get("backtest.benchmark", "^NSEI")
+
+    needed = list(dict.fromkeys([regime_index, bench_sym] + ([trade_symbol] if trade_symbol else [])
+                                 + ([fut_index] if fut_index else []) + universe))
     log.info("Downloading history %s..%s for %d symbols (strategy=%s)", start, end, len(needed), active)
     feed = YFinanceFeed()
     data = feed.history(needed, start, end)
@@ -79,7 +83,15 @@ def main():
         impact_pct=cfg.get("costs.impact_pct", 0.0005),
         stop_loss_pct=cfg.get("risk.stop_loss_pct", 0.08),
     )
-    result = engine.run(target, close, risk_mgr=risk, benchmark=bench_close)
+    if is_futures:
+        cf = cfg.get("costs_futures", {})
+        engine.cost_pct = cf.get("cost_pct", 0.0002)
+        result = engine.run(target, close, benchmark=bench_close, futures=True,
+                            max_leverage=cf.get("max_leverage", 3.0),
+                            account_dd=cf.get("account_dd", 0.25),
+                            stop_pct=cf.get("stop_pct", 0.06))
+    else:
+        result = engine.run(target, close, risk_mgr=risk, benchmark=bench_close)
 
     m = result.metrics
     print("\n" + "=" * 64)
