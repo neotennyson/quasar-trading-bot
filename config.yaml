@@ -5,14 +5,18 @@
 
 broker:
   # Which broker to use for live/paper trading. Options: paper | dhan | groww
+  # Secrets are read from ENV vars (${VAR}) so they never live in this file.
+  # Export them in your shell, e.g.:
+  #   export DHAN_CLIENT_ID=... DHAN_CLIENT_SECRET=... DHAN_ACCESS_TOKEN=...
+  #   export GROWW_API_KEY=... GROWW_API_SECRET=...
   mode: paper
   dhan:
-    client_id: ""        # fill from Dhan developer console
-    client_secret: ""
-    access_token: ""     # optional, else use api_key+secret
+    client_id: "${DHAN_CLIENT_ID}"
+    client_secret: "${DHAN_CLIENT_SECRET}"
+    access_token: "${DHAN_ACCESS_TOKEN}"
   groww:
-    api_key: ""
-    api_secret: ""
+    api_key: "${GROWW_API_KEY}"
+    api_secret: "${GROWW_API_SECRET}"
 
 universe:
   # Trade EVERYTHING: liquid indices + the full Nifty 50 stock list (NSE .NS).

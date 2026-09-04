@@ -28,7 +28,22 @@ with a 3× gross cap. 6% per-trade stop + 25% account drawdown breaker always on
 ## Live trading
 Set `broker.mode: dhan|groww` and `multi_trend.instruments: null` (pulls the
 broker's full F&O instrument master); fill API keys; implement order routing in
-`src/quasar/brokers/`. Convert each instrument's signed-leverage signal to lots.
+`src/quasar/brokers/`. Secrets are read from **environment variables** so they
+never sit in the repo:
+```bash
+export DHAN_CLIENT_ID=... DHAN_CLIENT_SECRET=... DHAN_ACCESS_TOKEN=...
+export GROWW_API_KEY=... GROWW_API_SECRET=...
+```
+(`config.yaml` references them as `${DHAN_ACCESS_TOKEN}`, etc.)
+
+## Dashboard
+A clean Streamlit view of bot health — backtest equity + drawdown, live paper
+book, per-instrument long/flat/short signals, recent trades, and config:
+```bash
+pip install streamlit
+streamlit run dashboard/app.py
+```
+Sidebar buttons: **Run paper step** (refresh signals) and **Re-run backtest**.
 
 See **[INSTRUCTIONS.md](INSTRUCTIONS.md)** for the full idea-to-execution design,
 architecture, backtest evidence, and risk notes.

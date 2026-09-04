@@ -20,10 +20,22 @@ class Config:
         return cur
 
 
+def _expand_env(obj):
+    """Replace ${VAR} in string config values with environment variables."""
+    if isinstance(obj, dict):
+        return {k: _expand_env(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_expand_env(v) for v in obj]
+    if isinstance(obj, str) and obj.startswith("${") and obj.endswith("}"):
+        return os.environ.get(obj[2:-1], "")
+    return obj
+
+
 def load_config(path: str | None = None) -> Config:
     if path is None:
         path = os.environ.get("QUASAR_CONFIG",
                               os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml"))
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
+    raw = _expand_env(raw)
     return Config(raw=raw)

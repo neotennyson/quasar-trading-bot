@@ -170,6 +170,28 @@ trade F&O live across the whole market:
 The bot already reads past data via your Dhan/Groww API where available and
 falls back to the cached yfinance feed for research/backtests.
 
+### Supplying API credentials safely
+I cannot read your TOTP / authenticator or log into your broker — you generate
+the keys and paste them as **environment variables** (kept out of the repo):
+```bash
+export DHAN_CLIENT_ID=...      # from developer.dhan.co
+export DHAN_CLIENT_SECRET=...
+export DHAN_ACCESS_TOKEN=...   # generate via Dhan token API using your TOTP, or the console button
+export GROWW_API_KEY=...       # from groww.in API section
+export GROWW_API_SECRET=...
+```
+`config.yaml` references them as `${DHAN_ACCESS_TOKEN}` etc. (`src/quasar/config.py`
+expands these at load). Then set `broker.mode: dhan` (or `groww`).
+
+### Dashboard
+```bash
+pip install streamlit
+streamlit run dashboard/app.py
+```
+Shows backtest equity + drawdown, live paper book, per-instrument
+long/flat/short signals, recent trades, and live config. Sidebar: **Run paper
+step** (refresh) and **Re-run backtest**.
+
 ---
 
 ## 7. Risk & honesty notes
