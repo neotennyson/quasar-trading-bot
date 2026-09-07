@@ -23,6 +23,7 @@ from ..config import load_config
 from ..data.feed import build_feed
 from ..strategies import build_strategy, required_symbols
 from ..risk.manager import RiskManager
+from ..brokers import build_broker
 
 log = logging.getLogger("quasar.paper")
 
@@ -43,6 +44,12 @@ class PaperTrader:
             target_drawdown_pct=cfg.get("risk.target_drawdown_pct", 0.15),
         )
         self.history_days = 420
+        self.live = bool(cfg.get("broker.live_trading", False))
+        self.broker = build_broker(cfg) if self.live else None
+        if self.broker is not None:
+            log.warning("LIVE TRADING ENABLED via %s - orders sent to broker!", self.broker.name)
+        else:
+            log.info("PaperTrader initialised (paper mode). equity=%.2f", self.state["cash"])
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
@@ -108,18 +115,24 @@ class PaperTrader:
                 target = pd.Series(0.0, index=target.index)
 
         orders = []
-        for s in self.symbols:
+        for s in target.index:
             tgt = target.get(s, 0.0)
             cur = cur_w.get(s, 0.0)
             delta = tgt - cur
             if abs(delta) < 1e-4:
                 continue
-            price = prices[s]
+            price = prices.get(s)
+            if not price:
+                continue
             value_delta = delta * eq
             qty = int(value_delta / price)
             if qty == 0:
                 continue
-            orders.append({"symbol": s, "qty": qty, "price": price, "side": "BUY" if qty > 0 else "SELL"})
+            side = "BUY" if qty > 0 else "SELL"
+            if self.broker is not None:
+                res = self.broker.place_order(s, abs(qty), side, price)
+                log.info("LIVE %s %s qty=%d -> %s", side, s, abs(qty), res.msg)
+            orders.append({"symbol": s, "qty": qty, "price": price, "side": side})
 
         # apply fills
         for o in orders:

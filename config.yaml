@@ -10,6 +10,7 @@ broker:
   #   export DHAN_CLIENT_ID=... DHAN_CLIENT_SECRET=... DHAN_ACCESS_TOKEN=...
   #   export GROWW_API_KEY=... GROWW_API_SECRET=...
   mode: paper
+  live_trading: false        # set true to send REAL orders (paper by default)
   dhan:
     client_id: "${DHAN_CLIENT_ID}"
     client_secret: "${DHAN_CLIENT_SECRET}"

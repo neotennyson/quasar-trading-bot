@@ -20,6 +20,20 @@ class Config:
         return cur
 
 
+def _load_dotenv(path: str) -> None:
+    """Populate os.environ from a .env file (setdefault; env beats file)."""
+    try:
+        text = open(path).read()
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
 def _expand_env(obj):
     """Replace ${VAR} in string config values with environment variables."""
     if isinstance(obj, dict):
@@ -35,6 +49,9 @@ def load_config(path: str | None = None) -> Config:
     if path is None:
         path = os.environ.get("QUASAR_CONFIG",
                               os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml"))
+    # load .env beside the project root so ${VAR} placeholders resolve
+    _load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+    _load_dotenv(os.path.join(os.path.expanduser("~"), ".env"))
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
     raw = _expand_env(raw)
