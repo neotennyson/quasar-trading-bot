@@ -49,7 +49,7 @@ class PaperTrader:
         if self.broker is not None:
             log.warning("LIVE TRADING ENABLED via %s - orders sent to broker!", self.broker.name)
         else:
-            log.info("PaperTrader initialised (paper mode). equity=%.2f", self.state["cash"])
+            log.info("PaperTrader initialised (paper mode). equity=%.2f", self.initial)
         self.state = self._load_state()
 
     def _load_state(self) -> dict:
