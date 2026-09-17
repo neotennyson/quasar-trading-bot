@@ -148,14 +148,14 @@ strategy:
     ma_window: 100         # slower filter -> fewer whipsaws
     fast: 20
     slow: 50
-    trend_ma: 200          # primary-trend gate: only long when price > 200d MA
+    trend_ma: 200          # used only to measure trend strength (leverage sizing)
     strength_band: 0.03    # fast/slow MA gap that counts as "full strength" (scales leverage)
     instr_vol: 0.10        # per-instrument vol target (drives risk-parity weight = 1/vol)
     portfolio_vol: 0.15    # target portfolio volatility (leverage scaled to this)
     max_leverage: 2.0      # cap on any single instrument's leverage
     gross_cap: 3.0         # cap on total gross notional (sum of |weights|)
     vol_window: 20
-    long_only: true
+    long_only: true        # long-only (disciplined): no shorting -> down months show small losses, not green
 
   regime_filter:
     enabled: true

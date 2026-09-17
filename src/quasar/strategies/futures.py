@@ -116,20 +116,25 @@ class MultiTrendStrategy(Strategy):
             above = px >= ma
             if self.primary_gate:
                 above = above & (px >= ma_slow[s])
-            direction = above.fillna(False).astype(float)
             if self.long_only:
-                direction = direction.clip(lower=0.0)
+                direction = above.fillna(False).astype(float).clip(lower=0.0)
+            else:
+                # allow shorting: +1 above the MA, -1 below it (trend-follow both ways)
+                direction = np.where(above.fillna(False), 1.0, -1.0)
 
             ret = px.pct_change().fillna(0.0)
             rv = ret.rolling(self.vol_window).std() * np.sqrt(252)
             base_lev = (self.instr_vol / rv).clip(upper=self.max_leverage).fillna(0.0)
-            # TREND STRENGTH: normalised gap between fast and slow MA (0..1).
-            # weak trend (small gap) -> tiny bet (kills whipsaw sizing);
-            # strong established trend -> full size.
-            gap = (ma / ma_slow[s] - 1.0).clip(lower=0.0).fillna(0.0)
+            # TREND STRENGTH: normalised gap between fast and slow MA (0..1),
+            # using the ABSOLUTE gap so it works in BOTH directions. A weak
+            # trend (fast ~ slow, gap ~ 0) -> tiny bet (kills whipsaw sizing);
+            # a strong trend (up OR down) -> full size. This lets the bot short
+            # real downtrends instead of just going flat.
+            gap = (ma / ma_slow[s] - 1.0).abs().fillna(0.0)
             strength = (gap / self.strength_band).clip(0.0, 1.0)
             lev = base_lev * strength
-            raw[s] = (direction * lev).clip(0.0, self.max_leverage)
+            lo = 0.0 if self.long_only else -self.max_leverage
+            raw[s] = (direction * lev).clip(lo, self.max_leverage)
 
         # Covariance-aware vol targeting: scale the whole book so the ACTUAL
         # portfolio return volatility (which reflects real cross-asset
@@ -138,7 +143,7 @@ class MultiTrendStrategy(Strategy):
         rp = (raw * asset_ret).sum(axis=1)          # portfolio return at raw weights
         rp_vol = rp.rolling(self.vol_window).std() * np.sqrt(252)
         scale = (self.portfolio_vol / rp_vol).fillna(0.0)
-        w = raw.mul(scale, axis=0).clip(0.0, self.max_leverage)
+        w = raw.mul(scale, axis=0).clip(lo, self.max_leverage)
 
         # cap gross leverage (sum of |weights|) at gross_cap
         gross = w.abs().sum(axis=1)
