@@ -38,6 +38,8 @@ def main():
     cfg = load_config()
     start = args.start or cfg.get("backtest.start", "2016-01-01")
     end = args.end or cfg.get("backtest.end", "2024-12-31")
+    # fetch extra warm-up history so long MAs (e.g. 200d) are valid at `start`
+    warm_start = (pd.Timestamp(start) - pd.Timedelta(days=450)).strftime("%Y-%m-%d")
 
     strat = build_strategy(cfg)
     active = cfg.get("strategy.active", "index_trend")
@@ -62,9 +64,9 @@ def main():
     needed = list(dict.fromkeys([regime_index, bench_sym] + strat_syms
                                  + ([trade_symbol] if trade_symbol else [])
                                  + ([fut_index] if fut_index else []) + universe))
-    log.info("Downloading history %s..%s for %d symbols (strategy=%s)", start, end, len(needed), active)
+    log.info("Downloading history %s..%s for %d symbols (strategy=%s)", warm_start, end, len(needed), active)
     feed = YFinanceFeed()
-    data = feed.history(needed, start, end)
+    data = feed.history(needed, warm_start, end)
     missing = [s for s in needed if s not in data]
     if missing:
         log.warning("Missing data for: %s", missing)
@@ -104,11 +106,14 @@ def main():
     else:
         result = engine.run(target, close, risk_mgr=risk, benchmark=bench_close)
 
-    m = result.metrics
+    # report only the requested [start, end] window (warm-up history excluded)
+    eq = result.equity.loc[start:end]
+    bench_eq = result.benchmark_equity.loc[start:end] if result.benchmark_equity is not None else None
+    m = engine._metrics(eq, bench_eq)
     print("\n" + "=" * 64)
     print("QUASAR BACKTEST RESULT  (strategy: %s)" % active)
     print("=" * 64)
-    print(f"Period            : {close.index[0].date()} -> {close.index[-1].date()}")
+    print(f"Period            : {start} -> {end}")
     print(f"Total return      : {m['total_return']*100:8.2f}%")
     if "benchmark_return" in m:
         print(f"Benchmark return  : {m['benchmark_return']*100:8.2f}%  ({bench_sym})")
