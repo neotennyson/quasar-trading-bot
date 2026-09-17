@@ -162,7 +162,7 @@ strategy:
 
 # F&O-specific cost & risk assumptions (futures: low STT + exchange charges)
 costs_futures:
-  cost_pct: 0.0002         # ~0.02% round-trip (STT 0.01% + exchange + brokerage)
+  cost_pct: 0.0007         # ~0.07% round-trip all-in (STT 0.02% sell + exchange 0.004% + brokerage + GST + slippage)
   stop_pct: 0.06           # exit a trade if index moves 6% against entry
   account_dd: 0.25         # flatten & halt new entries if account drawdown hits 25%
 
