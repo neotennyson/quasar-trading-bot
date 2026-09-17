@@ -114,13 +114,20 @@ class MultiTrendStrategy(Strategy):
             # long when price is above the fast MA (original rule). The optional
             # primary_gate also requires price > slow MA (stricter, fewer trades).
             above = px >= ma
+            below_primary = px < ma_slow[s]
             if self.primary_gate:
-                above = above & (px >= ma_slow[s])
-            if self.long_only:
-                direction = above.fillna(False).astype(float).clip(lower=0.0)
+                # CONFIRMED two-way trend: long only when above BOTH MAs,
+                # short only when below BOTH MAs; no-man's-land -> flat (avoids whipsaw).
+                long_sig = above & (px >= ma_slow[s])
+                short_sig = (~above) & below_primary
             else:
-                # allow shorting: +1 above the MA, -1 below it (trend-follow both ways)
-                direction = np.where(above.fillna(False), 1.0, -1.0)
+                long_sig = above
+                short_sig = ~above
+            if self.long_only:
+                direction = long_sig.fillna(False).astype(float)
+            else:
+                direction = np.where(long_sig.fillna(False), 1.0,
+                                     np.where(short_sig.fillna(False), -1.0, 0.0))
 
             ret = px.pct_change().fillna(0.0)
             rv = ret.rolling(self.vol_window).std() * np.sqrt(252)

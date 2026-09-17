@@ -145,17 +145,18 @@ strategy:
   multi_trend:
     instruments: ["^NSEI", "^NSEBANK", "^NSEFIN", "^NSEMID"]   # index-FUTURES only (Option A)
     mode: above_ma
-    ma_window: 100         # slower filter -> fewer whipsaws
+    ma_window: 75          # two-way trend filter (long above both MAs, short below both)
     fast: 20
     slow: 50
-    trend_ma: 200          # used only to measure trend strength (leverage sizing)
+    trend_ma: 200          # primary-trend MA: used as the confirmation gate + strength measure
+    primary_gate: true     # ONLY trade with trend confirmation (above/below BOTH MAs) -> no whipsaw
     strength_band: 0.03    # fast/slow MA gap that counts as "full strength" (scales leverage)
     instr_vol: 0.10        # per-instrument vol target (drives risk-parity weight = 1/vol)
     portfolio_vol: 0.15    # target portfolio volatility (leverage scaled to this)
     max_leverage: 2.0      # cap on any single instrument's leverage
     gross_cap: 3.0         # cap on total gross notional (sum of |weights|)
     vol_window: 20
-    long_only: true        # long-only (disciplined): no shorting -> down months show small losses, not green
+    long_only: false       # TWO-WAY: trend-follow both directions (profits in down/shock markets too)
 
   regime_filter:
     enabled: true
