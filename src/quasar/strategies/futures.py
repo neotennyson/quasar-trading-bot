@@ -80,10 +80,11 @@ class MultiTrendStrategy(Strategy):
     """
     name = "multi_trend"
 
-    def __init__(self, instruments: list, mode: str = "above_ma", ma_window: int = 50,
+    def __init__(self, instruments: list, mode: str = "above_ma", ma_window: int = 100,
                  fast: int = 20, slow: int = 50, instr_vol: float = 0.10,
                  portfolio_vol: float = 0.18, max_leverage: float = 3.0,
-                 gross_cap: float = 5.0, vol_window: int = 20, long_only: bool = True):
+                 gross_cap: float = 5.0, vol_window: int = 20, long_only: bool = True,
+                 trend_ma: int = 200, strength_band: float = 0.03, primary_gate: bool = False):
         self.instruments = instruments
         self.mode = mode
         self.ma_window = ma_window
@@ -95,30 +96,40 @@ class MultiTrendStrategy(Strategy):
         self.gross_cap = gross_cap
         self.vol_window = vol_window
         self.long_only = long_only
+        self.trend_ma = trend_ma
+        self.strength_band = strength_band
+        self.primary_gate = primary_gate
 
     def run(self, close: pd.DataFrame, volume: pd.DataFrame) -> pd.DataFrame:
         dates = close.index
         insts = [c for c in self.instruments if c in close.columns]
         raw = pd.DataFrame(0.0, index=dates, columns=insts)
+        # slow MA is used ONLY to measure trend strength (for leverage sizing),
+        # NOT as a hard gate (a hard gate destroys bull-market capture).
+        ma_slow = close.rolling(self.trend_ma).mean()
 
         for s in insts:
             px = close[s]
-            if self.mode == "above_ma":
-                ma = px.rolling(self.ma_window).mean()
-                direction = np.where(px >= ma, 1.0, -1.0)
-            else:
-                f = px.rolling(self.fast).mean()
-                sl = px.rolling(self.slow).mean()
-                direction = np.where(f >= sl, 1.0, -1.0)
-            direction = pd.Series(direction, index=dates)
+            ma = px.rolling(self.ma_window).mean()
+            # long when price is above the fast MA (original rule). The optional
+            # primary_gate also requires price > slow MA (stricter, fewer trades).
+            above = px >= ma
+            if self.primary_gate:
+                above = above & (px >= ma_slow[s])
+            direction = above.fillna(False).astype(float)
             if self.long_only:
                 direction = direction.clip(lower=0.0)
 
             ret = px.pct_change().fillna(0.0)
             rv = ret.rolling(self.vol_window).std() * np.sqrt(252)
-            # risk-parity weight ~ 1/vol (equal risk contribution per name)
-            lev = (self.instr_vol / rv).clip(upper=self.max_leverage).fillna(0.0)
-            raw[s] = (direction * lev).clip(-self.max_leverage, self.max_leverage)
+            base_lev = (self.instr_vol / rv).clip(upper=self.max_leverage).fillna(0.0)
+            # TREND STRENGTH: normalised gap between fast and slow MA (0..1).
+            # weak trend (small gap) -> tiny bet (kills whipsaw sizing);
+            # strong established trend -> full size.
+            gap = (ma / ma_slow[s] - 1.0).clip(lower=0.0).fillna(0.0)
+            strength = (gap / self.strength_band).clip(0.0, 1.0)
+            lev = base_lev * strength
+            raw[s] = (direction * lev).clip(0.0, self.max_leverage)
 
         # Covariance-aware vol targeting: scale the whole book so the ACTUAL
         # portfolio return volatility (which reflects real cross-asset
@@ -127,7 +138,7 @@ class MultiTrendStrategy(Strategy):
         rp = (raw * asset_ret).sum(axis=1)          # portfolio return at raw weights
         rp_vol = rp.rolling(self.vol_window).std() * np.sqrt(252)
         scale = (self.portfolio_vol / rp_vol).fillna(0.0)
-        w = raw.mul(scale, axis=0).clip(-self.max_leverage, self.max_leverage)
+        w = raw.mul(scale, axis=0).clip(0.0, self.max_leverage)
 
         # cap gross leverage (sum of |weights|) at gross_cap
         gross = w.abs().sum(axis=1)

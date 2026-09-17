@@ -49,7 +49,18 @@ def main():
     is_futures = (active in ("futures_trend", "multi_trend"))
     bench_sym = "^NSEI" if is_futures else cfg.get("backtest.benchmark", "^NSEI")
 
-    needed = list(dict.fromkeys([regime_index, bench_sym] + ([trade_symbol] if trade_symbol else [])
+    # include the instruments the active strategy actually trades (e.g. the 4 index
+    # futures) so they are fetched even when they aren't in universe.symbols.
+    strat_syms = []
+    for _a in ("instruments", "index", "trade_symbol"):
+        _v = getattr(strat, _a, None)
+        if isinstance(_v, list):
+            strat_syms += _v
+        elif isinstance(_v, str):
+            strat_syms.append(_v)
+
+    needed = list(dict.fromkeys([regime_index, bench_sym] + strat_syms
+                                 + ([trade_symbol] if trade_symbol else [])
                                  + ([fut_index] if fut_index else []) + universe))
     log.info("Downloading history %s..%s for %d symbols (strategy=%s)", start, end, len(needed), active)
     feed = YFinanceFeed()
