@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 import csv
@@ -128,6 +129,41 @@ class DhanBroker(BaseBroker):
             "lot_size": int(best.get("SEM_LOT_SIZE", 1) or 1),
             "expiry": best.get("SEM_EXPIRY_DATE", ""),
         }
+
+    def list_futures_universe(self, indices_only: bool = False) -> dict:
+        """Full tradeable NSE F&O futures universe (nearest expiry per underlying).
+
+        Returns {underlying: {trading_symbol, security_id, lot_size, expiry}}.
+        This is the REAL profit lever: instead of 2 correlated index futures
+        (yfinance-only), the bot can trade EVERY liquid index + stock future that
+        Dhan's instrument master exposes - proper CTA-style diversification.
+        """
+        master = self._load_master()
+        INDEX_SET = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}
+        out: dict = {}
+        for r in master:
+            if r.get("SEM_EXM_TYP") != "FUT" or r.get("SEM_EXCH_CODE") != "NSE":
+                continue
+            tsym = (r.get("SEM_TRADING_SYMBOL") or "").strip()
+            if not tsym:
+                continue
+            m = re.match(r"([A-Z]+)", tsym)
+            if not m:
+                continue
+            underlying = m.group(1)
+            if indices_only and underlying not in INDEX_SET:
+                continue
+            exp = r.get("SEM_EXPIRY_DATE", "")
+            cur = out.get(underlying)
+            if cur is None or (exp and exp < cur["expiry"]):
+                out[underlying] = {
+                    "trading_symbol": tsym,
+                    "security_id": r.get("SEM_SMST_SEC_ID"),
+                    "lot_size": int(r.get("SEM_LOT_SIZE", 1) or 1),
+                    "expiry": exp,
+                    "is_index": underlying in INDEX_SET,
+                }
+        return out
 
     def place_order(self, symbol: str, qty: int, side: str, price: float | None = None) -> OrderResult:
         if qty <= 0:
