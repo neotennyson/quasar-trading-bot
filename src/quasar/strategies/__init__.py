@@ -94,6 +94,25 @@ def build_strategy(cfg: Config, instruments=None) -> Strategy:
             w_boll=p.get("w_boll", 1.0),
             w_breakout=p.get("w_breakout", 1.0),
         )
+    if active == "diversified_trend":
+        p = cfg.get("strategy.diversified_trend", {})
+        insts = instruments if instruments else (p.get("instruments") or required_symbols(cfg))
+        return MultiTrendStrategy(
+            instruments=insts,
+            mode=p.get("mode", "above_ma"),
+            ma_window=p.get("ma_window", 100),
+            fast=p.get("fast", 20),
+            slow=p.get("slow", 50),
+            trend_ma=p.get("trend_ma", 200),
+            primary_gate=p.get("primary_gate", True),
+            strength_band=p.get("strength_band", 0.03),
+            instr_vol=p.get("instr_vol", 0.10),
+            portfolio_vol=p.get("portfolio_vol", 0.10),
+            max_leverage=p.get("max_leverage", 2.0),
+            gross_cap=p.get("gross_cap", 3.0),
+            vol_window=p.get("vol_window", 20),
+            long_only=p.get("long_only", False),
+        )
     raise ValueError(f"Unknown strategy: {active}")
 
 

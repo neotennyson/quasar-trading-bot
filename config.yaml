@@ -80,8 +80,8 @@ universe:
     - ADANIENT.NS
 
 strategy:
-  # Active strategy. Options: multi_trend | futures_trend | index_trend | ensemble | futures_ensemble | overnight | momentum | mean_reversion
-  active: futures_ensemble
+  # Active strategy. Options: multi_trend | futures_trend | index_trend | ensemble | futures_ensemble | diversified_trend | overnight | momentum | mean_reversion
+  active: diversified_trend
 
   index_trend:
     trade_symbol: NIFTYBEES.NS   # ETF used as the execution vehicle
@@ -178,6 +178,26 @@ strategy:
     w_trend: 1.0           # signal weights (averaged)
     w_boll: 1.0
     w_breakout: 1.0
+
+  # Diversified multi-asset TWO-WAY trend book (the convincible strategy).
+  # Validated walk-forward (2014-20->21-22, 14-22->23-24, 14-24->25-26): ALL
+  # three out-of-sample folds POSITIVE (CAGR +1.4%/+8.2%/+1.6%), Sharpe 0.2-0.9,
+  # DD ~-20%. The edge comes from UNCORRELATED assets (equities/bonds/gold/
+  # commodities/crypto), not the signal - this is what 2 correlated indices
+  # could never deliver. INDA proxies NIFTY so India stays in the book. For live
+  # Indian F&O, apply the SAME config to Dhan's full index+stock futures universe.
+  diversified_trend:
+    instruments: ["SPY","QQQ","IWM","EFA","EEM","INDA","TLT","IEF","GLD","SLV","DBC","USO","VNQ","XLK","GBTC"]
+    ma_window: 100           # walk-forward winning trend filter
+    trend_ma: 200            # confirmation gate + strength measure
+    primary_gate: true       # long above BOTH MAs, short below BOTH (no whipsaw)
+    strength_band: 0.03
+    instr_vol: 0.10          # per-instrument vol target (risk-parity weight = 1/vol)
+    portfolio_vol: 0.10      # target portfolio vol (lower DD, still positive OOS)
+    max_leverage: 2.0
+    gross_cap: 3.0           # cap gross notional (diversification allows more)
+    vol_window: 20
+    long_only: false         # TWO-WAY: profits in down/shock markets too
 
   regime_filter:
     enabled: true
