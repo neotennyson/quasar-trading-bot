@@ -39,7 +39,7 @@ def main():
     start = args.start or cfg.get("backtest.start", "2016-01-01")
     end = args.end or cfg.get("backtest.end", "2024-12-31")
     # fetch extra warm-up history so long MAs (e.g. 200d) are valid at `start`
-    warm_start = (pd.Timestamp(start) - pd.Timedelta(days=450)).strftime("%Y-%m-%d")
+    warm_start = (pd.Timestamp(start) - pd.Timedelta(days=720)).strftime("%Y-%m-%d")
 
     strat = build_strategy(cfg)
     active = cfg.get("strategy.active", "index_trend")
@@ -48,7 +48,7 @@ def main():
     fut_index = getattr(strat, "index", None)
     universe = list(cfg.get("universe.symbols", []))
 
-    is_futures = (active in ("futures_trend", "multi_trend"))
+    is_futures = (active in ("futures_trend", "multi_trend", "futures_ensemble"))
     bench_sym = "^NSEI" if is_futures else cfg.get("backtest.benchmark", "^NSEI")
 
     # include the instruments the active strategy actually trades (e.g. the 4 index
@@ -73,9 +73,9 @@ def main():
 
     avail = [s for s in needed if s in data]
     close = pd.DataFrame({s: data[s]["Close"] for s in avail}).sort_index()
-    close = close.loc[:, ~close.columns.duplicated()]
+    close = close.loc[:, ~close.columns.duplicated()].ffill().bfill()
     volume = pd.DataFrame({s: data[s]["Volume"] for s in avail}).sort_index()
-    volume = volume.reindex(close.index).fillna(0)
+    volume = volume.reindex(close.index).ffill().bfill().fillna(0)
 
     log.info("Running strategy: %s", active)
     target = strat.run(close, volume)

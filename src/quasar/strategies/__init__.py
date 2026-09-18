@@ -7,7 +7,7 @@ from .base import Strategy, MomentumStrategy, MeanReversionStrategy
 from .ensemble import EnsembleStrategy
 from .trend import IndexTrendStrategy
 from .overnight import OvernightStrategy
-from .futures import FuturesTrendStrategy, MultiTrendStrategy
+from .futures import FuturesTrendStrategy, MultiTrendStrategy, FuturesEnsembleStrategy
 
 
 def build_strategy(cfg: Config) -> Strategy:
@@ -73,6 +73,26 @@ def build_strategy(cfg: Config) -> Strategy:
             gross_cap=p.get("gross_cap", 5.0),
             vol_window=p.get("vol_window", 20),
             long_only=p.get("long_only", True),
+        )
+    if active == "futures_ensemble":
+        p = cfg.get("strategy.futures_ensemble", {})
+        insts = p.get("instruments") or required_symbols(cfg)
+        return FuturesEnsembleStrategy(
+            instruments=insts,
+            ma_window=p.get("ma_window", 75),
+            trend_ma=p.get("trend_ma", 200),
+            strength_band=p.get("strength_band", 0.03),
+            primary_gate=p.get("primary_gate", True),
+            boll_k=p.get("boll_k", 20),
+            boll_std=p.get("boll_std", 2.0),
+            breakout_n=p.get("breakout_n", 20),
+            instr_vol=p.get("instr_vol", 0.10),
+            max_leverage=p.get("max_leverage", 2.0),
+            vol_window=p.get("vol_window", 20),
+            long_only=p.get("long_only", False),
+            w_trend=p.get("w_trend", 1.0),
+            w_boll=p.get("w_boll", 1.0),
+            w_breakout=p.get("w_breakout", 1.0),
         )
     raise ValueError(f"Unknown strategy: {active}")
 

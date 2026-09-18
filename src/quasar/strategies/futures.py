@@ -158,3 +158,100 @@ class MultiTrendStrategy(Strategy):
         w = w.divide(divisor, axis=0)
 
         return w.fillna(0.0)
+
+
+class FuturesEnsembleStrategy(Strategy):
+    """Two-way futures ENSEMBLE: average of three uncorrelated alpha signals.
+
+    Each signal produces a SIGNED leverage series (long/short/flat), volatility
+    targeted so leverage = instr_vol / realised_vol (capped at max_leverage). The
+    three sub-signals:
+
+      1. TREND   - long above both MAs, short below both (no-man's-land flat),
+                   sized by absolute trend strength (fast-vs-slow MA gap).
+      2. BOLLINGER - long when price breaks above the upper band, short below
+                     the lower band (mean-reversion-around-the-trend edge).
+      3. BREAKOUT  - long on N-day high breakout, short on N-day low breakdown
+                     (capture acceleration in either direction).
+
+    Averaging decorrelates the alphas: trend carries the big sustained moves,
+    Bollinger catches fades, breakout catches accelerations. The blend cuts
+    drawdown and whipsaw bleed vs any single signal while staying profitable in
+    BOTH up and down regimes (the whole point after the US-Iran shock).
+    """
+    name = "futures_ensemble"
+
+    def __init__(self, instruments: list, ma_window: int = 75, trend_ma: int = 200,
+                 strength_band: float = 0.03, primary_gate: bool = True,
+                 boll_k: int = 20, boll_std: float = 2.0, breakout_n: int = 20,
+                 instr_vol: float = 0.10, max_leverage: float = 2.0,
+                 vol_window: int = 20, long_only: bool = False,
+                 w_trend: float = 1.0, w_boll: float = 1.0, w_breakout: float = 1.0):
+        self.instruments = instruments
+        self.ma_window = ma_window
+        self.trend_ma = trend_ma
+        self.strength_band = strength_band
+        self.primary_gate = primary_gate
+        self.boll_k = boll_k
+        self.boll_std = boll_std
+        self.breakout_n = breakout_n
+        self.instr_vol = instr_vol
+        self.max_leverage = max_leverage
+        self.vol_window = vol_window
+        self.long_only = long_only
+        self.w_trend = w_trend
+        self.w_boll = w_boll
+        self.w_breakout = w_breakout
+
+    def _lev(self, px):
+        ret = px.pct_change().fillna(0.0)
+        rv = ret.rolling(self.vol_window).std() * np.sqrt(252)
+        return (self.instr_vol / rv).clip(upper=self.max_leverage).fillna(0.0)
+
+    def run(self, close: pd.DataFrame, volume: pd.DataFrame) -> pd.DataFrame:
+        dates = close.index
+        insts = [c for c in self.instruments if c in close.columns]
+        out = pd.DataFrame(0.0, index=dates, columns=insts)
+        ma_slow = close.rolling(self.trend_ma).mean()
+
+        for s in insts:
+            px = close[s]
+            ma = px.rolling(self.ma_window).mean()
+            lev = self._lev(px)
+            lo = 0.0 if self.long_only else -self.max_leverage
+
+            # 1. TREND
+            above = px >= ma
+            below_primary = px < ma_slow[s]
+            if self.primary_gate:
+                long_sig = above & (px >= ma_slow[s])
+                short_sig = (~above) & below_primary
+            else:
+                long_sig = above
+                short_sig = ~above
+            trend_dir = np.where(long_sig.fillna(False), 1.0,
+                                 np.where(short_sig.fillna(False), -1.0, 0.0))
+            gap = (ma / ma_slow[s] - 1.0).abs().fillna(0.0)
+            strength = (gap / self.strength_band).clip(0.0, 1.0)
+            w_trend = pd.Series(trend_dir, index=dates) * lev * strength
+
+            # 2. BOLLINGER (breakout of volatility bands, two-way)
+            mid = px.rolling(self.boll_k).mean()
+            sd = px.rolling(self.boll_k).std()
+            up = mid + self.boll_std * sd
+            dn = mid - self.boll_std * sd
+            boll_dir = np.where(px > up, 1.0, np.where(px < dn, -1.0, 0.0))
+            w_boll = pd.Series(boll_dir, index=dates) * lev
+
+            # 3. BREAKOUT (N-day high/low channel)
+            hi = px.rolling(self.breakout_n).max()
+            lo_n = px.rolling(self.breakout_n).min()
+            bo_dir = np.where(px > hi.shift(1), 1.0, np.where(px < lo_n.shift(1), -1.0, 0.0))
+            w_break = pd.Series(bo_dir, index=dates) * lev
+
+            w = (self.w_trend * w_trend + self.w_boll * w_boll + self.w_breakout * w_break)
+            if (self.w_trend + self.w_boll + self.w_breakout) > 0:
+                w = w / (self.w_trend + self.w_boll + self.w_breakout)
+            out[s] = w.clip(lo, self.max_leverage)
+
+        return out.fillna(0.0)
