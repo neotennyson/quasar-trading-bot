@@ -50,7 +50,26 @@ class PaperTrader:
             log.warning("LIVE TRADING ENABLED via %s - orders sent to broker!", self.broker.name)
         else:
             log.info("PaperTrader initialised (paper mode). equity=%.2f", self.initial)
+        # When broker.mode is dhan and the active futures strategy has no explicit
+        # instrument list, trade the FULL live F&O universe (the real profit lever).
+        # This only pulls PRICES (DhanFeed) - no orders are ever sent in paper mode.
+        self._live_instruments = self._resolve_live_universe()
         self.state = self._load_state()
+
+    def _resolve_live_universe(self) -> Optional[List[str]]:
+        if self.cfg.get("broker.mode") != "dhan":
+            return None
+        try:
+            from ..brokers import DhanBroker
+            b = DhanBroker(self.cfg.get("broker.dhan.client_id", ""))
+            uni = b.list_futures_universe()
+            syms = list(uni.keys())
+            if syms:
+                log.info("PaperTrader trading LIVE futures universe: %d underlyings", len(syms))
+                return syms
+        except Exception as e:  # pragma: no cover
+            log.warning("Live universe resolution failed (sandbox?): %s", e)
+        return None
 
     def _load_state(self) -> dict:
         if os.path.exists(self.state_file):
@@ -65,9 +84,15 @@ class PaperTrader:
         json.dump(self.state, open(self.state_file, "w"), indent=2, default=str)
 
     def _history(self) -> pd.DataFrame:
-        strat = build_strategy(self.cfg)
+        strat = build_strategy(self.cfg, self._live_instruments)
         trade_symbol = getattr(strat, "trade_symbol", None)
-        syms = required_symbols(self.cfg) + list(self.symbols)
+        if self._live_instruments:
+            syms = list(self._live_instruments)
+            regime = self.cfg.get("strategy.regime_filter.index", "^NSEI")
+            if regime not in syms:
+                syms = [regime] + syms
+        else:
+            syms = required_symbols(self.cfg) + list(self.symbols)
         if trade_symbol:
             syms = [trade_symbol] + syms
         syms = list(dict.fromkeys(syms))
@@ -82,7 +107,7 @@ class PaperTrader:
 
     def compute_target(self) -> pd.Series:
         close, vol = self._history()
-        strat = build_strategy(self.cfg)
+        strat = build_strategy(self.cfg, self._live_instruments)
         w = strat.run(close, vol)
         target = w.iloc[-1].copy()
         # apply risk limits to the single target row

@@ -10,7 +10,7 @@ from .overnight import OvernightStrategy
 from .futures import FuturesTrendStrategy, MultiTrendStrategy, FuturesEnsembleStrategy
 
 
-def build_strategy(cfg: Config) -> Strategy:
+def build_strategy(cfg: Config, instruments=None) -> Strategy:
     active = cfg.get("strategy.active", "index_trend")
     if active == "index_trend":
         p = cfg.get("strategy.index_trend", {})
@@ -60,7 +60,7 @@ def build_strategy(cfg: Config) -> Strategy:
         )
     if active == "multi_trend":
         p = cfg.get("strategy.multi_trend", {})
-        insts = p.get("instruments") or required_symbols(cfg)
+        insts = instruments if instruments else (p.get("instruments") or required_symbols(cfg))
         return MultiTrendStrategy(
             instruments=insts,
             mode=p.get("mode", "above_ma"),
@@ -76,7 +76,7 @@ def build_strategy(cfg: Config) -> Strategy:
         )
     if active == "futures_ensemble":
         p = cfg.get("strategy.futures_ensemble", {})
-        insts = p.get("instruments") or required_symbols(cfg)
+        insts = instruments if instruments else (p.get("instruments") or required_symbols(cfg))
         return FuturesEnsembleStrategy(
             instruments=insts,
             ma_window=p.get("ma_window", 75),
