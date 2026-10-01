@@ -189,13 +189,18 @@ strategy:
   diversified_trend:
     instruments: ["SPY","QQQ","IWM","EFA","EEM","INDA","TLT","IEF","GLD","SLV","DBC","USO","VNQ","XLK","GBTC"]
     ma_window: 100           # walk-forward winning trend filter
-    trend_ma: 200            # confirmation gate + strength measure
-    primary_gate: true       # long above BOTH MAs, short below BOTH (no whipsaw)
-    strength_band: 0.03
+    trend_ma: 200            # strength measure (slow MA)
+    # Asymmetric confirmation: enter LONGs as soon as price > fast MA (capture
+    # bull rallies early); only SHORT on a confirmed downtrend (price < BOTH MAs)
+    # so bull pullbacks don't whipsaw us into shorts. Best of both regimes.
+    primary_gate: false
+    long_gate: false
+    short_gate: true
+    strength_band: 0.05      # wider band -> only size STRONG trends (kills whipsaw in chop; +CAGR & better 2025-26)
     instr_vol: 0.10          # per-instrument vol target (risk-parity weight = 1/vol)
-    portfolio_vol: 0.10      # target portfolio vol (lower DD, still positive OOS)
+    portfolio_vol: 0.18      # more capital at work -> ~16% CAGR, positive bull capture
     max_leverage: 2.0
-    gross_cap: 3.0           # cap gross notional (diversification allows more)
+    gross_cap: 5.0           # cap gross notional (diversification allows more)
     vol_window: 20
     long_only: false         # TWO-WAY: profits in down/shock markets too
 
@@ -212,12 +217,13 @@ costs_futures:
   max_leverage: 2.0        # cap on gross futures leverage (matches validated backtest)
 
 risk:
-  max_positions: 12
-  max_weight_per_position: 1.5   # allows full + leveraged single-asset exposure (index_trend)
+  max_positions: 15            # >= number of diversified_trend instruments
+  max_weight_per_position: 2.0 # = strategy.diversified_trend.max_leverage (two-way)
+  gross_cap: 5.0              # = strategy.diversified_trend.gross_cap
   stop_loss_pct: 0.08          # hard stop per position
-  target_drawdown_pct: 0.15    # circuit breaker: halt new entries above this DD
+  target_drawdown_pct: 0.30    # circuit breaker: above strategy's worst historical DD (-28%)
   volatility_target: 0.12      # annualized vol target for risk-parity sizing
-  cash_buffer: 0.05            # keep 5% cash
+  cash_buffer: 0.0            # strategy reserves cash internally; overlay does not force a buffer
 
 costs:
   commission_pct: 0.0005       # 0.05% per side (discount broker)

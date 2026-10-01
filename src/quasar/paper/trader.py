@@ -36,12 +36,15 @@ class PaperTrader:
         self.symbols = cfg.get("universe.symbols", [])
         self.regime_index = cfg.get("strategy.regime_filter.index", "NIFTYBEES.NS")
         self.initial = cfg.get("backtest.initial_capital", 1_000_000.0)
+        active = cfg.get("strategy.active", "index_trend")
+        strat_cfg = cfg.get(f"strategy.{active}", {})
         self.risk = RiskManager(
-            max_positions=cfg.get("risk.max_positions", 12),
-            max_weight=cfg.get("risk.max_weight_per_position", 0.15),
-            cash_buffer=cfg.get("risk.cash_buffer", 0.05),
+            max_positions=cfg.get("risk.max_positions", 15),
+            max_weight=cfg.get("risk.max_weight_per_position", strat_cfg.get("max_leverage", 2.0)),
+            gross_cap=cfg.get("risk.gross_cap", strat_cfg.get("gross_cap", 3.0)),
+            cash_buffer=cfg.get("risk.cash_buffer", 0.0),
             stop_loss_pct=cfg.get("risk.stop_loss_pct", 0.08),
-            target_drawdown_pct=cfg.get("risk.target_drawdown_pct", 0.15),
+            target_drawdown_pct=cfg.get("risk.target_drawdown_pct", 0.25),
         )
         self.history_days = 420
         self.live = bool(cfg.get("broker.live_trading", False))
@@ -86,11 +89,16 @@ class PaperTrader:
     def _history(self) -> pd.DataFrame:
         strat = build_strategy(self.cfg, self._live_instruments)
         trade_symbol = getattr(strat, "trade_symbol", None)
+        insts = getattr(strat, "instruments", None)
         if self._live_instruments:
             syms = list(self._live_instruments)
             regime = self.cfg.get("strategy.regime_filter.index", "^NSEI")
             if regime not in syms:
                 syms = [regime] + syms
+        elif insts:
+            # Trade only the strategy's own instruments (avoids pulling dead
+            # universe symbols whose NaNs would wipe the window via dropna).
+            syms = list(insts)
         else:
             syms = required_symbols(self.cfg) + list(self.symbols)
         if trade_symbol:

@@ -151,6 +151,10 @@ def main():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         st.rerun()
 
+    # ---- Footer ----
+    st.divider()
+    st.caption("QUASAR · powered by Hy3")
+
 
 if __name__ == "__main__":
     main()

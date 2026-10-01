@@ -105,6 +105,8 @@ def build_strategy(cfg: Config, instruments=None) -> Strategy:
             slow=p.get("slow", 50),
             trend_ma=p.get("trend_ma", 200),
             primary_gate=p.get("primary_gate", True),
+            long_gate=p.get("long_gate", None),
+            short_gate=p.get("short_gate", None),
             strength_band=p.get("strength_band", 0.03),
             instr_vol=p.get("instr_vol", 0.10),
             portfolio_vol=p.get("portfolio_vol", 0.10),
@@ -130,6 +132,8 @@ def required_symbols(cfg: Config) -> List[str]:
             val = getattr(strat, attr, None)
             if isinstance(val, str) and val not in syms:
                 syms = [val] + syms
+            elif isinstance(val, list):
+                syms = val + syms
     except Exception:
         pass
     return syms

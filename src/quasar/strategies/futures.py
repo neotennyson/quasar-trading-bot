@@ -84,7 +84,8 @@ class MultiTrendStrategy(Strategy):
                  fast: int = 20, slow: int = 50, instr_vol: float = 0.10,
                  portfolio_vol: float = 0.18, max_leverage: float = 3.0,
                  gross_cap: float = 5.0, vol_window: int = 20, long_only: bool = True,
-                 trend_ma: int = 200, strength_band: float = 0.03, primary_gate: bool = False):
+                 trend_ma: int = 200, strength_band: float = 0.03, primary_gate: bool = False,
+                 long_gate: bool = None, short_gate: bool = None):
         self.instruments = instruments
         self.mode = mode
         self.ma_window = ma_window
@@ -99,11 +100,17 @@ class MultiTrendStrategy(Strategy):
         self.trend_ma = trend_ma
         self.strength_band = strength_band
         self.primary_gate = primary_gate
+        # Asymmetric confirmation: enter LONGs early (above fast MA) but only
+        # SHORT on a confirmed downtrend (below both MAs). This captures bull
+        # rallies fast while still protecting in real crashes (whipsaw-safe).
+        self.long_gate = long_gate if long_gate is not None else primary_gate
+        self.short_gate = short_gate if short_gate is not None else primary_gate
 
     def run(self, close: pd.DataFrame, volume: pd.DataFrame) -> pd.DataFrame:
         dates = close.index
         insts = [c for c in self.instruments if c in close.columns]
         raw = pd.DataFrame(0.0, index=dates, columns=insts)
+        lo = 0.0 if self.long_only else -self.max_leverage
         # slow MA is used ONLY to measure trend strength (for leverage sizing),
         # NOT as a hard gate (a hard gate destroys bull-market capture).
         ma_slow = close.rolling(self.trend_ma).mean()
@@ -115,13 +122,15 @@ class MultiTrendStrategy(Strategy):
             # primary_gate also requires price > slow MA (stricter, fewer trades).
             above = px >= ma
             below_primary = px < ma_slow[s]
-            if self.primary_gate:
-                # CONFIRMED two-way trend: long only when above BOTH MAs,
-                # short only when below BOTH MAs; no-man's-land -> flat (avoids whipsaw).
+            if self.long_gate:
+                # confirmed long: above BOTH fast and slow MA (stricter, fewer trades)
                 long_sig = above & (px >= ma_slow[s])
-                short_sig = (~above) & below_primary
             else:
                 long_sig = above
+            if self.short_gate:
+                # confirmed short: below BOTH MAs (real downtrend; avoids whipsaw)
+                short_sig = (~above) & below_primary
+            else:
                 short_sig = ~above
             if self.long_only:
                 direction = long_sig.fillna(False).astype(float)
@@ -139,9 +148,8 @@ class MultiTrendStrategy(Strategy):
             # real downtrends instead of just going flat.
             gap = (ma / ma_slow[s] - 1.0).abs().fillna(0.0)
             strength = (gap / self.strength_band).clip(0.0, 1.0)
-            lev = base_lev * strength
-            lo = 0.0 if self.long_only else -self.max_leverage
-            raw[s] = (direction * lev).clip(lo, self.max_leverage)
+        lev = base_lev * strength
+        raw[s] = (direction * lev).clip(lo, self.max_leverage)
 
         # Covariance-aware vol targeting: scale the whole book so the ACTUAL
         # portfolio return volatility (which reflects real cross-asset
