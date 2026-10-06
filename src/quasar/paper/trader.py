@@ -178,7 +178,7 @@ class PaperTrader:
 
         eq = self.equity(prices)
         self.state["equity_curve"].append({"date": datetime.now().isoformat(), "equity": eq})
-        self.state["last_signal"] = {s: float(target.get(s, 0.0)) for s in self.symbols}
+        self.state["last_signal"] = {s: float(target.get(s, 0.0)) for s in target.index}
         self._save_state()
 
         log.info("STEP equity=%.2f orders=%d", eq, len(orders))
