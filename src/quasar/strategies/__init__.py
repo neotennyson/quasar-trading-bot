@@ -31,9 +31,17 @@ def build_strategy(cfg: Config, instruments=None) -> Strategy:
                                 regime_ma=cfg.get("strategy.regime_filter.ma_window", 200))
     if active == "momentum":
         p = cfg.get("strategy.momentum", {})
-        return MomentumStrategy(regime_index=p.get("regime_index", "^NSEI"),
-                                regime_ma=p.get("regime_ma", 200), **{k: v for k, v in p.items()
-                                if k not in ("regime_index", "regime_ma")})
+        uni = p.get("universe") or cfg.get("universe.symbols", [])
+        return MomentumStrategy(
+            universe=uni,
+            lookback_days=p.get("lookback_days", 252),
+            skip_days=p.get("skip_days", 21),
+            top_frac=p.get("top_frac", 1 / 3),
+            top_n=p.get("top_n"),
+            equal_weight=p.get("equal_weight", True),
+            regime_index=p.get("regime_index"),
+            regime_ma=p.get("regime_ma", 200),
+        )
     if active == "mean_reversion":
         p = cfg.get("strategy.mean_reversion", {})
         return MeanReversionStrategy(regime_index=p.get("regime_index", "^NSEI"),

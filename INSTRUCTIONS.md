@@ -1,93 +1,88 @@
-# QUASAR — QUantitative Automated Stock ARbiter (F&O Edition)
+# QUASAR — QUantitative Automated Stock ARbiter
 
 > An autonomous, risk-managed **F&O (Futures & Options) trading bot** for the
-> Indian market (NSE). It runs one backtest-validated trend rule on **every
-> liquid instrument — all indices (Nifty, Bank Nifty, Fin Nifty, Midcap Nifty)
-> and all listed stocks** — and combines them into a single diversified,
-> risk-parity portfolio with volatility-targeted leverage. No opportunity is
-> left unused; the only objective is to grow capital with hard risk limits.
+> Indian market (NSE). It runs one backtest-validated, parameter-free edge —
+> **cross-sectional momentum** — across a basket of liquid NSE stocks and
+> expresses it through **stock and index futures**.
 >
-> (Single-instrument modes — `futures_trend` on one index, or `index_trend`
-> cash-ETF — also ship as selectable alternatives in `config.yaml`.)
+> (Other strategy modes — index/ensemble/futures-trend — also ship in
+> `config.yaml` but are not the validated active strategy.)
 
 **Name:** *QUASAR* — a quasar is the brightest, most energetic object in the
-universe; the bot is built as a high-energy, relentless profit engine. The name
-is deliberately non-Indian and astronomy-themed.
+universe; the bot is built as a high-energy, relentless profit engine.
 
 ---
 
-## 1. Why "trade everything", and why this strategy
+## 1. Why momentum, and why this design
 
-F&O lets a small margin control a large notional, so a modest move becomes a
-large P&L. The edge we harvest is the same one proven in research: **Indian
-instruments trend**, and most return accrues while the trend is up. Rather than
-bet on one name, QUASAR expresses that edge on **every instrument at once** and
-diversifies — exactly how a CTA (managed futures fund) works.
+A single trend-following rule on the Nifty future (or any one index) is
+**flat out-of-sample after realistic costs** — we tested it, and it underperforms
+buy-and-hold. The one edge that is genuinely robust in Indian equities is
+**cross-sectional momentum**: winners over the past year tend to keep winning for
+a while, and a basket of them diversifies idiosyncratic risk.
 
-We stress-tested ideas (2016–2024):
-
-| Approach | Result (9y) | Verdict |
-|---|---|---|
-| Single index futures (Nifty) | +298%, DD −20% | ✅ good |
-| Cash ETF trend + vol target | +145%, DD −14% | ✅ no leverage |
-| **Multi-instrument trend portfolio (all indices + all stocks)** | **+1362%, DD −19%** | ✅✅ **Chosen** |
-
-The multi-instrument version **beats buy-and-hold Nifty (+203%) by +1158%**,
-with a **Sharpe of 1.79** (vs ~0.83) and a **max drawdown of only −19%** (vs
-−38%). Diversification + risk parity turns "trade everything" into both more
-return *and* less risk.
+We deliberately use a **parameter-free** spec (12-1 momentum, top-1/3, equal
+weight, monthly) so there is nothing to overfit. The rule is applied identically
+across all historical periods; every rolling 3-year window is therefore a true
+out-of-sample test, and all of them are positive.
 
 ---
 
 ## 2. The Strategy (plain English)
 
-1. **Universe.** Every liquid instrument you give it: indices
-   (`^NSEI, ^NSEBANK, ^NSEFIN, ^NSEMID`) + the full stock list in
-   `config.universe.symbols`. In live F&O, set `multi_trend.instruments: null`
-   and the bot pulls the broker's **entire F&O instrument master** (all index +
-   stock futures) automatically — the strategy runs identically on each name.
-2. **Per-instrument signal.** For each instrument: LONG when its close is above
-   its 50-day MA, else FLAT (set `long_only: false` to also SHORT). 
-3. **Risk parity.** Each name gets weight ∝ 1/vol, so every instrument
-   contributes **equal risk** — no single stock can dominate the book.
-4. **Portfolio vol targeting.** The whole book is scaled (using the *actual*
-   portfolio return volatility, which respects cross-asset correlation — not a
-   naive independence assumption) to a **15% target volatility**, and total
-   gross notional is **capped at 3×**.
-5. **Stops & breaker (always on).**
-   - **Trade stop:** exit a position if the instrument moves **6% against entry**.
-   - **Account circuit breaker:** if account drawdown hits **25%**, flatten and
-     halt new entries until recovery.
-   - **Costs:** ~0.02% round-trip (STT 0.01% + exchange + brokerage) on every
-     rebalance, in backtests and paper trades.
+1. **Universe.** A basket of liquid NSE large/mid-caps in `config.universe.symbols`
+   (indices are tracked separately for the regime filter). In live F&O, the same
+   momentum logic maps each selected underlying to its **front-month futures**
+   contract via the broker's instrument master.
+2. **Signal.** At each month-end, rank every stock by its **12-1 momentum**: the
+   return from 13 months ago to 1 month ago (skipping the last month avoids the
+   well-known 1-month reversal). This is a standard, well-documented factor.
+3. **Selection.** Equal-weight the **top ~1/3** of the ranked names. Long-only,
+   fully invested. No leverage, no shorting, no per-day stops.
+4. **Rebalance.** Hold for one month, then re-rank and rebalance. Turnover is the
+   cost driver, so monthly (not weekly) rebalancing keeps costs realistic.
+5. **Risk management.** Risk is controlled by **diversification** (≈15 names) and
+   the monthly rebalance — not by leverage or tight stops, which just whipsaw a
+   monthly signal.
 
-Net effect: a diversified, leveraged trend-follower that is long strength
-everywhere, flat in weakness, and can never lose more than the breaker allows.
+Net effect: a diversified, fully-invested long book of recent winners that
+rebalances monthly and quietly beats buy-and-hold with similar drawdown.
 
 ---
 
-## 3. Backtest Evidence — `multi_trend` (2016-01-01 → 2024-12-30)
+## 3. Backtest Evidence — `momentum` (2016-01-01 → 2024-12-31)
 
-Universe: 4 indices + 50 Nifty stocks (54 instruments), risk-parity, 3× gross cap.
+Universe: ~47 liquid NSE names. Realistic F&O costs (~0.17% round-trip per
+monthly rebalance: STT 0.02% sell-side + brokerage + slippage + futures roll).
 
 ```
-Period            : 2016-01-01 -> 2024-12-30
-Total return      :  1361.79%
-Benchmark return  :   203.48%  (^NSEI buy & hold)
-Excess return     :  1158.31%
-CAGR              :    34.74%
-Sharpe            :     1.79
-Max drawdown      :   -19.19%
-Volatility        :    17.93%
-Final equity      : Rs 14,617,917   (from Rs 1,000,000)
-Total trades      : 3454
+Period            : 2016-01-01 -> 2024-12-31
+Total return      :   558.25%
+Benchmark return  :   197.56%  (^NSEI buy & hold)
+Excess return     :   360.69%
+CAGR              :    23.30%
+Sharpe            :     1.28
+Max drawdown      :   -34.60%
+Volatility        :    18.00%
+Final equity      : Rs 7,079,597   (from Rs 1,000,000)
+Total trades      : 329
 ```
 
-3454 entries over 9 years across the whole book. **Beats buy-and-hold Nifty by
-+1158%**, with a **Sharpe of 1.79** (vs ~0.83) and a **max drawdown of only
-−19%** (vs −38%). More return *and* less risk — that is the diversification
-dividend. (The single-index `futures_trend` mode returns +298% / Sharpe 1.13 /
-DD −20% as a lighter alternative.)
+**Out-of-sample robustness** (same rule, no re-fitting, rolling 3-year windows):
+CAGR 19.5%–25.3%, Sharpe 1.0–1.55, all positive. Beats Nifty buy & hold
+(12.7% CAGR) by a wide margin with comparable drawdown.
+
+### Honesty notes (important)
+- **Earlier docs claimed 34.7% CAGR / +1362%.** That figure used ~2bps fictional
+  costs, ran on the wrong market (US ETFs you cannot trade, plus an Indian
+  index-futures trend rule that was flat out-of-sample), and was the product of
+  cost inflation + overfitting. The numbers above use realistic Indian F&O costs
+  and a parameter-free rule.
+- **Survivorship bias:** the universe is a set of *current* liquid large-caps, so
+  the backtest favours names that survived and grew. Live performance on a
+  point-in-time universe will be lower. Treat 23% as an optimistic ceiling.
+- The backtest uses **spot prices as futures proxies**; live futures roll
+  behaviour differs slightly (approximated in the cost model).
 
 ---
 
@@ -95,36 +90,32 @@ DD −20% as a lighter alternative.)
 
 ```
 quasar-trading-bot/
-├── config.yaml                 # every knob (strategy, costs, futures risk)
-├── INSTRUCTIONS.md             # this document
-├── README.md                   # quickstart
+├── config.yaml                 # active strategy = momentum, universe, costs
+├── README.md / INSTRUCTIONS.md # this doc + honest quickstart
 ├── requirements.txt
 ├── src/quasar/
-│   ├── config.py               # config loader
-│   ├── indicators.py           # RSI / Bollinger / momentum / vol
-│   ├── data/feed.py           # cached+cleaned yfinance feed + Dhan/Groww adapters
+│   ├── config.py               # config loader (expands ${ENV} secrets)
+│   ├── indicators.py           # momentum / vol helpers
+│   ├── data/feed.py            # cached yfinance feed + Dhan/Groww adapters
 │   ├── strategies/
-│   │   ├── futures.py          # ★ FuturesTrendStrategy (ACTIVE, F&O)
+│   │   ├── base.py             # ★ MomentumStrategy (ACTIVE)
+│   │   ├── futures.py          # futures_trend / multi_trend (research)
 │   │   ├── trend.py            # index_trend (equity ETF mode)
-│   │   ├── base.py             # momentum + mean-reversion
-│   │   ├── ensemble.py         # momentum+mean-reversion blender
-│   │   ├── overnight.py        # overnight-drift (research)
-│   │   └── __init__.py        # build_strategy() factory
-│   ├── risk/manager.py         # position caps / cash buffer (equity mode)
-│   ├── backtest/engine.py      # portfolio simulator; F&O-aware (shorts, stops, DD breaker)
+│   │   ├── ensemble.py, overnight.py, mean_reversion.py
+│   │   └── __init__.py         # build_strategy() factory
+│   ├── risk/manager.py         # position caps (equity mode)
+│   ├── backtest/engine.py      # portfolio simulator with realistic costs
 │   ├── paper/trader.py         # live paper loop + state + signal/order output
-│   └── brokers/                # DhanBroker / GrowwBroker (order routing stubs)
-├── scripts/
-│   ├── backtest.py             # full backtest + report (F&O aware)
-│   ├── validate.py             # strategy validation
-│   └── tune.py / sweep2.py / experiments.py
-└── tests/test_strategies.py    # pytest (equity + futures)
+│   └── brokers/                # DhanBroker / GrowwBroker (scaffolded)
+├── scripts/backtest.py         # full backtest + report
+├── dashboard/app.py            # Streamlit health view
+└── tests/test_strategies.py    # pytest
 ```
 
-**Flow:** `DataFeed` → `build_strategy(cfg)` (target signed leverage per day)
-→ `BacktestEngine` (F&O mode: applies leverage, ATR-style stop, account DD
-breaker, F&O costs) → equity curve. Live: `PaperTrader` compares target vs
-paper book and emits orders (routed to Dhan/Groww when configured).
+**Flow:** `DataFeed` → `build_strategy(cfg)` → `MomentumStrategy.run` (target
+weights) → `BacktestEngine` (applies realistic F&O costs, monthly rebalance) →
+equity curve. Live: `PaperTrader` compares target vs paper book and emits orders
+(routed to Dhan/Groww when configured).
 
 ---
 
@@ -133,13 +124,13 @@ paper book and emits orders (routed to Dhan/Groww when configured).
 ```bash
 pip install -r requirements.txt
 
-# Backtest the active (F&O) strategy -> writes data/equity_curve.csv, data/trades.csv
+# Backtest the active momentum strategy -> data/equity_curve.csv, data/trades.csv
 python scripts/backtest.py --save
 
-# One paper-trading session (prints signal + orders)
+# One paper-trading session (prints signal + simulated orders)
 PYTHONPATH=src python -m quasar.paper.trader --once
 
-# Run forever (poll hourly) — schedule via cron at market close
+# Run forever (poll at market close)
 PYTHONPATH=src python -m quasar.paper.trader --loop --poll 3600
 
 # Tests
@@ -148,61 +139,39 @@ PYTHONPATH=src python -m pytest tests/ -q
 
 ---
 
-## 6. Going live with Dhan / Groww (F&O, multi-instrument)
+## 6. Going live with Dhan / Groww (F&O)
 
-`config.yaml → broker`: the bot ships in **paper** mode (no real orders). To
-trade F&O live across the whole market:
+`config.yaml → broker`: ships in **paper** mode (no real orders). To trade F&O
+live:
 
-1. Set `broker.mode: dhan` (or `groww`) and fill `client_id` / `access_token`
-   (or API keys) from your developer console.
-2. Set `strategy.multi_trend.instruments: null` so the bot loads the broker's
-   **full F&O instrument master** (all index + stock futures) — the same trend
-   logic then runs on every contract.
-3. Implement order placement in `src/quasar/brokers/dhan.py` / `groww.py` per
-   the official API docs — instrument master + futures order endpoints are
-   scaffolded, with dry-run logging already in place.
-4. Translate each instrument's *signed leverage* into lots:
-   `lots = floor( |weight| × capital / (price × lot_size) )`, rounded to the
-   exchange lot size (Nifty ≈ 50, Bank Nifty ≈ 15, stocks vary). Go LONG the
-   future when weight > 0, SHORT when < 0, FLAT when 0. The circuit breaker and
-   trade stop apply at the portfolio and position level respectively.
+1. Set `broker.mode: dhan` (or `groww`) and supply API keys.
+2. The paper trader maps each selected underlying to its futures contract via the
+   broker instrument master (`list_futures_universe` scaffolded in the broker
+   layer); translate target weight into lots:
+   `lots = floor(|weight| × capital / (price × lot_size))`.
+3. Implement order placement in `src/quasar/brokers/dhan.py` / `groww.py`.
 
-The bot already reads past data via your Dhan/Groww API where available and
-falls back to the cached yfinance feed for research/backtests.
-
-### Supplying API credentials safely
-I cannot read your TOTP / authenticator or log into your broker — you generate
-the keys and paste them as **environment variables** (kept out of the repo):
+Credentials are supplied as **environment variables** (kept out of the repo):
 ```bash
-export DHAN_CLIENT_ID=...      # from developer.dhan.co
-export DHAN_CLIENT_SECRET=...
-export DHAN_ACCESS_TOKEN=...   # generate via Dhan token API using your TOTP, or the console button
-export GROWW_API_KEY=...       # from groww.in API section
-export GROWW_API_SECRET=...
+export DHAN_CLIENT_ID=... DHAN_CLIENT_SECRET=... DHAN_ACCESS_TOKEN=...
+export GROWW_API_KEY=... GROWW_API_SECRET=...
 ```
-`config.yaml` references them as `${DHAN_ACCESS_TOKEN}` etc. (`src/quasar/config.py`
-expands these at load). Then set `broker.mode: dhan` (or `groww`).
 
 ### Dashboard
 ```bash
 pip install streamlit
 streamlit run dashboard/app.py
 ```
-Shows backtest equity + drawdown, live paper book, per-instrument
-long/flat/short signals, recent trades, and live config. Sidebar: **Run paper
-step** (refresh) and **Re-run backtest**.
 
 ---
 
 ## 7. Risk & honesty notes
 
-- **F&O is leveraged.** Even with the 25% breaker and 6% trade stop, a violent
-  gap can hurt. The breaker exists to prevent account blow-ups, not to remove
-  all risk.
-- **Past performance ≠ future results.** The 9-year backtest includes realistic
-  costs; regimes change — monitor and tune `config.yaml`.
-- **Long/flat default** avoids short-side whipsaw; enable `long_only: false` only
-  if you accept shorting risk.
+- **F&O is leveraged.** Even long-only, futures magnify moves. Size lots to your
+  risk tolerance; the monthly rebalance + diversification is the primary control.
+- **Past performance ≠ future results.** 23% is an optimistic, survivorship-
+  biased ceiling on spot-proxy data with realistic costs. Live results will
+  differ.
 - The bot is a systematic rules engine, **not financial advice**.
 
 ---
@@ -211,18 +180,14 @@ step** (refresh) and **Re-run backtest**.
 
 | Knob | Effect |
 |---|---|
-| `strategy.active` | `multi_trend` (trade everything) / `futures_trend` (one index) / `index_trend` (equity) |
-| `universe.indices` / `universe.symbols` | the tradable instrument list (or pull from broker live) |
-| `strategy.multi_trend.ma_window` | trend sensitivity (50 default) |
-| `strategy.multi_trend.instr_vol` | per-instrument vol target (drives 1/vol risk-parity weight) |
-| `strategy.multi_trend.portfolio_vol` | target book volatility (0.15) → sets leverage |
-| `strategy.multi_trend.max_leverage` | cap per instrument (2.0) |
-| `strategy.multi_trend.gross_cap` | cap total gross notional (3.0) |
-| `strategy.multi_trend.long_only` | flat-when-down (true) vs short-when-down (false) |
-| `costs_futures.stop_pct` | per-trade stop (0.06 = 6%) |
-| `costs_futures.account_dd` | circuit-breaker (0.25) |
-| `costs_futures.cost_pct` | round-trip cost assumption (0.0002) |
+| `strategy.active` | `momentum` (active) / other modes (research) |
+| `universe.symbols` | the tradable stock basket (survivorship-biased; widen for live) |
+| `strategy.momentum.lookback_days` | momentum window (252 = 12 months) |
+| `strategy.momentum.skip_days` | months skipped (21 ≈ 1 month, avoids reversal) |
+| `strategy.momentum.top_frac` | fraction of universe held (0.34 ≈ top 1/3) |
+| `strategy.momentum.equal_weight` | equal-weight (true) vs vol-weighted |
+| `costs.*` | commission / STT / slippage / impact (round-trip ≈ 0.17%) |
 
 ---
 
-*QUASAR — built to make money in Indian F&O, quietly and with limits.*
+*QUASAR — built to make money in Indian F&O, honestly and with limits.*

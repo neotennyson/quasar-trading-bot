@@ -94,7 +94,10 @@ def main():
         stt_pct=cfg.get("costs.stt_pct", 0.00025),
         slippage_pct=cfg.get("costs.slippage_pct", 0.0005),
         impact_pct=cfg.get("costs.impact_pct", 0.0005),
-        stop_loss_pct=cfg.get("risk.stop_loss_pct", 0.08),
+        # momentum is monthly-rebalanced; a daily 8% stop just whipsaws it.
+        # disable the intraday stop for this strategy (risk is managed by
+        # diversification + monthly rebalancing, not per-day stops).
+        stop_loss_pct=0.5 if active == "momentum" else cfg.get("risk.stop_loss_pct", 0.08),
     )
     if is_futures:
         cf = cfg.get("costs_futures", {})
@@ -104,7 +107,10 @@ def main():
                             account_dd=cf.get("account_dd", 0.25),
                             stop_pct=cf.get("stop_pct", 0.06))
     else:
-        result = engine.run(target, close, risk_mgr=risk, benchmark=bench_close)
+        # momentum is a fully-invested long-only panel; don't clip it with the
+        # cash-buffer / concentration risk manager (that would distort the edge)
+        rm = None if active == "momentum" else risk
+        result = engine.run(target, close, risk_mgr=rm, benchmark=bench_close)
 
     # report only the requested [start, end] window (warm-up history excluded)
     eq = result.equity.loc[start:end]

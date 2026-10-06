@@ -46,7 +46,9 @@ class PaperTrader:
             stop_loss_pct=cfg.get("risk.stop_loss_pct", 0.08),
             target_drawdown_pct=cfg.get("risk.target_drawdown_pct", 0.25),
         )
-        self.history_days = 420
+        # momentum needs lookback(252)+skip(21)=273 trading days of history BEFORE
+        # the latest rebalance, so fetch a generous window (>= ~2yr of trading days)
+        self.history_days = 720
         self.live = bool(cfg.get("broker.live_trading", False))
         self.broker = build_broker(cfg) if self.live else None
         if self.broker is not None:
@@ -118,8 +120,11 @@ class PaperTrader:
         strat = build_strategy(self.cfg, self._live_instruments)
         w = strat.run(close, vol)
         target = w.iloc[-1].copy()
-        # apply risk limits to the single target row
-        target = self.risk.apply(pd.DataFrame([target], index=[close.index[-1]])).iloc[0]
+        # The momentum strategy already emits a fully-invested, valid long-only
+        # book; don't distort it with the cash-buffer / concentration overlay
+        # (matches the backtest, which runs momentum with no risk manager).
+        if self.cfg.get("strategy.active") != "momentum":
+            target = self.risk.apply(pd.DataFrame([target], index=[close.index[-1]])).iloc[0]
         return target
 
     def equity(self, prices: Dict[str, float]) -> float:
