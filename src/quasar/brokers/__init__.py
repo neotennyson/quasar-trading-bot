@@ -165,6 +165,80 @@ class DhanBroker(BaseBroker):
                 }
         return out
 
+    # ---- read-only account sync (used by PAPER mode to track the real book) ----
+    def _account_headers(self):
+        tok = os.environ.get("DHAN_ACCESS_TOKEN", "")
+        return {"Content-Type": "application/json", "Accept": "application/json",
+                "access-token": tok, "client-id": self.client_id}
+
+    def _get(self, path: str):
+        req = urllib.request.Request(f"{self.BASE}{path}", method="GET",
+                                     headers=self._account_headers())
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read().decode())
+
+    def get_positions(self) -> list:
+        try:
+            return self._get("/positions") or []
+        except Exception as e:  # pragma: no cover
+            log.warning("Dhan get_positions failed: %s", e)
+            return []
+
+    def get_holdings(self) -> list:
+        try:
+            return self._get("/holdings") or []
+        except Exception as e:  # pragma: no cover
+            log.warning("Dhan get_holdings failed: %s", e)
+            return []
+
+    def get_fundlimit(self) -> dict:
+        try:
+            return self._get("/fundlimit") or {}
+        except Exception as e:  # pragma: no cover
+            log.warning("Dhan get_fundlimit failed: %s", e)
+            return {}
+
+    @staticmethod
+    def _sym_to_universe(tsym: str):
+        """Map a Dhan trading symbol (RELIANCE25NOVFUT, NIFTY25NOVFUT) to our
+        universe key (RELIANCE.NS, ^NSEI)."""
+        m = re.match(r"([A-Z]+)", (tsym or ""))
+        if not m:
+            return None
+        u = m.group(1)
+        inv = {v: k for k, v in UNDERLYING.items()}
+        if u in inv:
+            return inv[u]
+        return f"{u}.NS"
+
+    def sync_portfolio(self, universe: set) -> tuple[dict, float]:
+        """Read the REAL Dhan account -> (shares_by_universe_symbol, cash).
+
+        Paper mode mirrors your actual book into the paper state so the dashboard
+        tracks the real account. No orders are placed here.
+        """
+        shares: dict = {}
+        for p in self.get_positions():
+            seg = p.get("exchangeSegment", "")
+            usym = self._sym_to_universe(p.get("tradingSymbol", ""))
+            if not usym or usym not in universe:
+                continue
+            qty = float(p.get("netQty", p.get("quantity", 0) or 0))
+            if seg == "NSE_FO":
+                shares[usym] = shares.get(usym, 0.0) + qty  # futures unit ≈ underlying share
+            elif seg in ("NSE_EQ", "NSE"):
+                shares[usym] = shares.get(usym, 0.0) + qty
+        for h in self.get_holdings():
+            usym = self._sym_to_universe(h.get("tradingSymbol", ""))
+            if not usym or usym not in universe:
+                continue
+            qty = float(h.get("quantity", h.get("netQty", 0) or 0))
+            shares[usym] = shares.get(usym, 0.0) + qty
+        cash = 0.0
+        fl = self.get_fundlimit()
+        cash = float(fl.get("availabelBalance", fl.get("availableBalance", 0) or 0))
+        return shares, cash
+
     def place_order(self, symbol: str, qty: int, side: str, price: float | None = None) -> OrderResult:
         if qty <= 0:
             return OrderResult(False, "qty<=0")
